@@ -1,6 +1,5 @@
 const axios = require('axios');
-
-const YEXT_API_KEY = process.env.YEXT_API_KEY;
+require('dotenv').config();
 
 module.exports = {
   createSite,
@@ -11,6 +10,8 @@ module.exports = {
   deleteSite,
   summarizeResponses
 };
+
+const YEXT_API_KEY = process.env.YEXT_API_KEY;
 
 // Creates sub-account in your account structure
 async function createSubaccount(accountId, subAccountId, subAccountName, subAccountCountryCode) {
@@ -34,77 +35,95 @@ async function createSubaccount(accountId, subAccountId, subAccountName, subAcco
     console.error('Error while making POST API request:', error.message);
     return { success: false, error: `Error | ${accountId} | ${error.message}`, yextResponse: {response} };
   }
-}
+};
 
 
 // Fetches all accounts in your account-structure.
 // Refer to https://hitchhikers.yext.com/docs/managementapis/agreements/accounts/#operation/listAccounts for documentation.
 async function fetchAccounts() {
   try {
-        const resultsPerPage = 100;
-        let offset = 0;
-        let totalObjects = [];
-        let responseCount = 0;
-        
-    const baseUrl = 'https://api.yext.com/v2/accounts?v=20230714';
+    const start = Date.now();
+    const resultsPerPage = 100;
+    let offset = 0;
+    let totalAccounts = [];
+    let responseCount = 0;
+      
     // Make API requests with pagination until all accounts are fetched
     do {
-      const apiUrl = `${baseUrl}&api_key=${YEXT_API_KEY}&offset=${offset}`;
+      const apiUrl = `https://api.yext.com/v2/accounts?v=20230714&api_key=${YEXT_API_KEY}&offset=${offset}`;
 
       const response = await axios.get(apiUrl);
-      const objects = response.data.response.accounts || [];
+      const accounts = response.data.response.accounts || [];
 
-      totalObjects.push(...objects);
-      responseCount = objects.length;
+      totalAccounts.push(...accounts);
+      responseCount = accounts.length;
       offset += resultsPerPage;
     } while (responseCount === resultsPerPage);
 
-    console.log("Fetched " +  totalObjects.length + " sub-accounts.");
-    return totalObjects;
+    const end = Date.now();
+    const duration = end - start;
+
+    return {
+      success: true,
+      uuid: response.data.meta.uuid,
+      totalAccounts: totalAccounts,
+      duration: `${duration} ms`
+    };
   } catch (error) {
-    console.error('Error while fetching accounts:', error.message);
-    throw error;
+      return { 
+        success: false,
+        uuid: error.response.data.meta.uuid,
+        statusCode: error.response.status,
+        errorMessage: error.response.data.meta.errors[0],
+        duration: `${duration} ms`
+      };
   }
-}
+};
 
 // Fetches all sites in your account-structure.
 async function fetchSites() {
   try {
-      const resultsPerPage = 100;
-      let pageToken = '';
-      let totalSites = [];
-      let responseCount = 0;
+    // const start = Date.now();
+    const resultsPerPage = 100;
+    let pageToken = '';
+    let allSites = [];
+    let responseCount = 0;
   
       // Make API requests with pagination until all sites are fetched
-      do {
-        const apiUrl = `https://api.yext.com/v2/accounts/all/sites?v=20230714&api_key=${YEXT_API_KEY}${pageToken ? `&pageToken=${pageToken}` : ''}`;
-  
-        const response = await axios.get(apiUrl);
-        const sites = response.data.response.sites || [];
-  
-        totalSites.push(...sites);
-        responseCount = sites.length;
-        pageToken = response.data.meta.pagination.pageToken;
-      } while (responseCount === resultsPerPage);
-      
-      console.log("Fetched " + totalSites.length + " sites.");
-      return totalSites;
-    } catch (error) {
-      console.error('Error while fetching sites:', error.message);
-      throw error;
-    }
+    do {
+      const apiUrl = `https://api.yext.com/v2/accounts/all/sites?v=20230714&api_key=${YEXT_API_KEY}${pageToken ? `&pageToken=${pageToken}` : ''}`;
+      console.log(apiUrl);
+
+      const response = await axios.get(apiUrl);
+      const sites = response.data.response.sites || [];
+
+      allSites.push(...sites);
+      responseCount = sites.length;
+      pageToken = response.data.meta.pagination.pageToken;
+    } while (responseCount === resultsPerPage);
+
+    // const end = Date.now();
+    // const duration = end - start;
+
+    console.log("Fetched " +  allSites.length + " sites.");
+    return allSites;
+  } catch (error) {
+    console.error({ 
+      success: false,
+      uuid: error.response.data.meta.uuid,
+      statusCode: error.response.status,
+      errorMessage: error.response.data.meta.errors[0],
+      // duration: `${duration} ms`
+    });
+    throw error;
   }
+};
 
 
 // Creates a GitHub repository object in a Yext account
 async function createRepository(accountId, repoId, repoUrl) {
   const postUrl = `https://api.yext.com/v2/accounts/${accountId}/config/resources/pages/repository?v=20230714&api_key=${YEXT_API_KEY}`; 
 
-    // const body = {
-    //     "$id": "basic-starter-repo-applied-via-api",
-    //     "$schema": "https://schema.yext.com/config/pages/repository/v1",
-    //     "repoUrl": "https://github.com/lymarrie/reseller-starter"
-    // };
     const body = {
       "$id": repoId,
       "$schema": "https://schema.yext.com/config/pages/repository/v1",
@@ -112,10 +131,27 @@ async function createRepository(accountId, repoId, repoUrl) {
     };
 
   try {
+      const start = Date.now();
       const response = await axios.post(postUrl, body);
-      return { success: true, data: response.data };
+      const end = Date.now();
+      const duration = end - start;
+      return { 
+        success: true,
+        uuid: response.data.meta.uuid,
+        accountId: accountId,
+        response: response.data.response[0],
+        duration: `${duration} ms`
+      };
     } catch (error) {
-      return { success: false, error: `Error | ${accountId} | ${error.message}`, data: response.data };
+      // console.log(error.response.data);
+      return { 
+        success: false,
+        uuid: error.response.data.meta.uuid,
+        accountId: accountId,
+        statusCode: error.response.status,
+        errorMessage: error.response.data.meta.errors[0],
+        duration: `${duration} ms`
+      };
   }
 };
 
@@ -128,45 +164,72 @@ async function createSite(accountId, body) {
         const response = await axios.post(apiUrl, body);
         const end = Date.now();
         const duration = end - start;
-        return { success: true, data: response.data };
+        return { 
+          success: true,
+          uuid: response.data.meta.uuid,
+          accountId: accountId,
+          response: response.data.response[0],
+          duration: `${duration} ms`
+        };
       } catch (error) {
-        return { success: false, error: `Error | ${accountId} | ${error.message}`, data: response.data };
+        return {
+          success: false,
+          uuid: error.response.data.meta.uuid,
+          accountId: accountId,
+          statusCode: error.response.status,
+          errorMessage: error.response.data.meta.errors[0],
+          duration: `${duration} ms`
+        };
     }
 };
 
   // Deletes a site from a Yext account.
 async function deleteSite(accountId, siteId) {
-    const url = `https://api.yext.com/v2/accounts/${accountId}/config/resources/pages/yextsite-config/${siteId}?v=20230414&api_key=${YEXT_API_KEY}`;
+  const url = `https://api.yext.com/v2/accounts/${accountId}/config/resources/pages/yextsite-config/${siteId}?v=20230414&api_key=${YEXT_API_KEY}`;
 
-  
-    try {
-        const start = Date.now();
-        const response = await axios.delete(url);
-        const end = Date.now();
-        const duration = end - start;
-      return { success: true, data: `Deletion Success | ${siteId} | ${accountId} | ${response.data}`, duration: `${duration} ms` };
-    } catch (error) {
-      return { success: false, error: `Deletion Error | ${siteId} | ${accountId} | ${error.message}`, duration: `${duration} ms` };
-    }
+  try {
+      const start = Date.now();
+      const response = await axios.delete(url);
+      const end = Date.now();
+      const duration = end - start;
+    return { 
+      success: true,
+      uuid: response.data.meta.uuid,
+      accountId: accountId,
+      response: response.data.response[0],
+      duration: `${duration ? `${duration} ms` : ''}`
+    };
+  } catch (error) {
+    return {
+      success: false,
+      uuid: error.response.data.meta.uuid,
+      accountId: accountId,
+      statusCode: error.response.status,
+      errorMessage: error.response.data.meta.errors[0],
+      duration: `${duration ? `${duration} ms` : ''}`
+    };
+  }
 };
 
   // Given a set of API responses, returns total count of successes vs. failures
-  function summarizeResponses(responses) {
-    let successfulRequests = 0;
-    let failedRequests = 0;
-  
-    responses.forEach((response) => {
-      if (response.status >= 200 && response.status < 300) {
-        successfulRequests++;
-      } else {
-        failedRequests++;
-      }
-    });
-  
-    return {
-      successful: successfulRequests,
-      failed: failedRequests,
-    };
-  }
+function summarizeResponses(responses) {
+  let successfulRequests, failedRequests = 0;
+
+  responses.forEach((response) => {
+    if (response.success) {
+      successfulRequests++;
+    } else {
+      failedRequests++;
+    }
+  });
+
+  console.log('\nSuccessful requests:', successfulRequests);
+  console.log('Failed requests:', failedRequests);
+
+  return {
+    successful: successfulRequests,
+    failed: failedRequests,
+  };
+};
   
 
